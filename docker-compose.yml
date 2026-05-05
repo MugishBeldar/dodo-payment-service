@@ -1,0 +1,52 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: dodo_postgres
+    environment:
+      POSTGRES_DB: dodo_payments
+      POSTGRES_USER: dodo_user
+      POSTGRES_PASSWORD: dodo_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dodo_user -d dodo_payments"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  mock-psp:
+    build:
+      context: .
+      dockerfile: mock-psp/Dockerfile
+    container_name: dodo_mock_psp
+    ports:
+      - "9090:9090"
+    environment:
+      PORT: 9090
+      RUST_LOG: info
+
+  invoice-service:
+    build:
+      context: .
+      dockerfile: invoice-service/Dockerfile
+    container_name: dodo_invoice_service
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: postgres://dodo_user:dodo_password@db:5432/dodo_payments
+      MOCK_PSP_URL: http://mock-psp:9090
+      PORT: 8080
+      PSP_TIMEOUT_SECS: 10
+      WEBHOOK_TIMEOUT_SECS: 10
+      RUST_LOG: debug
+    depends_on:
+      db:
+        condition: service_healthy
+      mock-psp:
+        condition: service_started
+
+volumes:
+  postgres_data:
